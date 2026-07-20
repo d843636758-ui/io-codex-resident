@@ -26,12 +26,14 @@ EOF
   chmod 600 "$CONFIG_FILE"
 fi
 
-echo "Waiting for Codex ChatGPT login and START_RESIDENT marker..."
+if [ ! -s "$CODEX_HOME/auth.json" ]; then
+  echo "Codex 尚未登录，现在启动 ChatGPT 设备授权。"
+  echo "请在日志中找到登录网址和设备代码。"
+  codex login --device-auth
+fi
 
-while [ ! -s "$CODEX_HOME/auth.json" ] || [ ! -f /data/START_RESIDENT ]; do
-  sleep 10
-done
+echo "正在检查 Codex 登录状态..."
+codex login status
 
-echo "Codex login and start marker found. Starting Feedling resident consumer."
-
+echo "登录成功，正在启动 Feedling resident consumer。"
 exec python -u tools/chat_resident_consumer.py
