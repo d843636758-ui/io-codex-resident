@@ -33,6 +33,44 @@ fi
 
 codex login status
 
+OB_MCP_URL="${OB_MCP_URL:-https://webweb.zeabur.app/mcp}"
+OB_CALLBACK_PUBLIC_URL="${OB_CALLBACK_PUBLIC_URL:-https://ioob.zeabur.app}"
+OB_CALLBACK_PUBLIC_PORT="${OB_CALLBACK_PUBLIC_PORT:-1455}"
+OB_CALLBACK_LOCAL_PORT="${OB_CALLBACK_LOCAL_PORT:-1456}"
+OB_OAUTH_MARKER=/data/feedling/ob_oauth_done
+
+if ! codex mcp get ob >/dev/null 2>&1; then
+  echo "正在添加 Ombre Brain MCP。"
+  codex mcp add ob --url "$OB_MCP_URL"
+fi
+
+if [ ! -f "$OB_OAUTH_MARKER" ]; then
+  echo "正在启动 Ombre Brain OAuth 回调中转。"
+  python -u /usr/local/bin/oauth-callback-relay \
+    --listen-port "$OB_CALLBACK_PUBLIC_PORT" \
+    --target-port "$OB_CALLBACK_LOCAL_PORT" &
+  RELAY_PID=$!
+
+  cleanup_relay() {
+    kill "$RELAY_PID" 2>/dev/null || true
+    wait "$RELAY_PID" 2>/dev/null || true
+  }
+  trap cleanup_relay EXIT INT TERM
+
+  sleep 1
+  echo "请打开下方授权网址；授权完成后服务会自动继续启动。"
+
+  codex \
+    -c "mcp_oauth_callback_port=$OB_CALLBACK_LOCAL_PORT" \
+    -c "mcp_oauth_callback_url=\"$OB_CALLBACK_PUBLIC_URL\"" \
+    mcp login ob
+
+  touch "$OB_OAUTH_MARKER"
+  echo "Ombre Brain OAuth 授权完成。"
+  cleanup_relay
+  trap - EXIT INT TERM
+fi
+
 ONBOARD_MARKER=/data/feedling/onboarding_done
 VERIFY_MARKER=/data/feedling/chat_verified
 
