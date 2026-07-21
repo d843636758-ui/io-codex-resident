@@ -13,6 +13,7 @@ TABLE_HEADER = re.compile(r"^\s*\[([^\[\]]+)]\s*(?:#.*)?$")
 ASSIGNMENT = re.compile(r"^\s*([^=]+?)\s*=")
 INLINE_TABLE = re.compile(r"^(\s*[^=]+?=\s*)\{(.*)}(\s*(?:#.*)?)$")
 SAFE_BASELINE = """cli_auth_credentials_store = "file"
+mcp_oauth_credentials_store = "file"
 approval_policy = "never"
 sandbox_mode = "workspace-write"
 
