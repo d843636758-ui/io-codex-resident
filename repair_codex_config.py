@@ -10,6 +10,97 @@ from pathlib import Path
 
 
 TABLE_HEADER = re.compile(r"^\s*\[([^\[\]]+)]\s*(?:#.*)?$")
+ASSIGNMENT = re.compile(r"^\s*([^=]+?)\s*=")
+INLINE_TABLE = re.compile(r"^(\s*[^=]+?=\s*)\{(.*)}(\s*(?:#.*)?)$")
+
+
+def _split_inline_items(value: str) -> list[str]:
+    items: list[str] = []
+    start = 0
+    quote = ""
+    escaped = False
+    depth = 0
+    for index, char in enumerate(value):
+        if quote:
+            if quote == '"' and char == "\\" and not escaped:
+                escaped = True
+                continue
+            if char == quote and not escaped:
+                quote = ""
+            escaped = False
+            continue
+        if char in ('"', "'"):
+            quote = char
+        elif char in "[{(":
+            depth += 1
+        elif char in "]})":
+            depth = max(0, depth - 1)
+        elif char == "," and depth == 0:
+            items.append(value[start:index].strip())
+            start = index + 1
+    items.append(value[start:].strip())
+    return [item for item in items if item]
+
+
+def _inline_item_key(item: str) -> str:
+    try:
+        parsed = tomllib.loads(f"value = {{ {item} }}")["value"]
+        if len(parsed) == 1:
+            return next(iter(parsed))
+    except tomllib.TOMLDecodeError:
+        pass
+    return item.split("=", 1)[0].strip()
+
+
+def _dedupe_inline_tables(lines: list[str]) -> tuple[list[str], bool]:
+    output: list[str] = []
+    changed = False
+    for line in lines:
+        ending = "\n" if line.endswith("\n") else ""
+        body = line[:-1] if ending else line
+        match = INLINE_TABLE.match(body)
+        if not match:
+            output.append(line)
+            continue
+        items = _split_inline_items(match.group(2))
+        last: dict[str, int] = {}
+        for index, item in enumerate(items):
+            last[_inline_item_key(item)] = index
+        kept = [
+            item for index, item in enumerate(items)
+            if last[_inline_item_key(item)] == index
+        ]
+        if len(kept) != len(items):
+            changed = True
+            body = f"{match.group(1)}{{ {', '.join(kept)} }}{match.group(3)}"
+        output.append(body + ending)
+    return output, changed
+
+
+def _dedupe_assignments(lines: list[str]) -> tuple[list[str], bool]:
+    section = ""
+    occurrences: dict[tuple[str, str], list[int]] = {}
+    for index, line in enumerate(lines):
+        table = TABLE_HEADER.match(line)
+        if table:
+            section = table.group(1).strip()
+            continue
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        assignment = ASSIGNMENT.match(line)
+        if assignment:
+            key = assignment.group(1).strip()
+            occurrences.setdefault((section, key), []).append(index)
+
+    remove = {
+        index
+        for indexes in occurrences.values()
+        for index in indexes[:-1]
+    }
+    if not remove:
+        return lines, False
+    return [line for index, line in enumerate(lines) if index not in remove], True
 
 
 def repair(text: str) -> tuple[str, bool]:
@@ -30,9 +121,6 @@ def repair(text: str) -> tuple[str, bool]:
         for indexes in occurrences.values()
         for index in indexes[:-1]
     }
-    if not duplicate_starts:
-        return text, False
-
     remove: set[int] = set()
     for position, (start, _name) in enumerate(headers):
         if start not in duplicate_starts:
@@ -45,9 +133,15 @@ def repair(text: str) -> tuple[str, bool]:
             if stripped and not stripped.startswith("#"):
                 remove.add(index)
 
-    repaired = "".join(
-        line for index, line in enumerate(lines) if index not in remove
-    )
+    lines = [line for index, line in enumerate(lines) if index not in remove]
+    lines, assignment_changed = _dedupe_assignments(lines)
+    lines, inline_changed = _dedupe_inline_tables(lines)
+    changed = bool(remove) or assignment_changed or inline_changed
+    if not changed:
+        # Still validate an untouched file so startup reports the real problem.
+        tomllib.loads(text)
+        return text, False
+    repaired = "".join(lines)
     # Refuse to persist a repair that is still not valid TOML.
     tomllib.loads(repaired)
     return repaired, True
