@@ -1,55 +1,56 @@
 #!/usr/bin/env python3
-"""Remove an unmanaged OB table when Feedling already manages the same table."""
+"""Repair duplicate tables in Codex's persisted TOML configuration."""
 
 from __future__ import annotations
 
 import argparse
 import re
+import tomllib
 from pathlib import Path
 
 
-MANAGED_BEGIN = "# --- feedling user_mcp (managed) — do not edit ---"
-MANAGED_END = "# --- end feedling user_mcp ---"
-OB_HEADER = "[mcp_servers.ob]"
-TABLE_HEADER = re.compile(r"^\s*\[")
+TABLE_HEADER = re.compile(r"^\s*\[([^\[\]]+)]\s*(?:#.*)?$")
 
 
 def repair(text: str) -> tuple[str, bool]:
-    begin = text.find(MANAGED_BEGIN)
-    end = text.find(MANAGED_END)
-    if begin < 0 or end < begin:
-        return text, False
-
-    managed = text[begin : end + len(MANAGED_END)]
-    if OB_HEADER not in managed:
-        return text, False
-
     lines = text.splitlines(keepends=True)
-    output: list[str] = []
-    in_managed = False
-    skipping_unmanaged_ob = False
-    changed = False
+    occurrences: dict[str, list[int]] = {}
+    headers: list[tuple[int, str]] = []
 
-    for line in lines:
-        stripped = line.strip()
-        if stripped == MANAGED_BEGIN:
-            in_managed = True
+    for index, line in enumerate(lines):
+        match = TABLE_HEADER.match(line)
+        if not match:
+            continue
+        name = match.group(1).strip()
+        headers.append((index, name))
+        occurrences.setdefault(name, []).append(index)
 
-        if skipping_unmanaged_ob and TABLE_HEADER.match(line):
-            skipping_unmanaged_ob = False
+    duplicate_starts = {
+        index
+        for indexes in occurrences.values()
+        for index in indexes[:-1]
+    }
+    if not duplicate_starts:
+        return text, False
 
-        if not in_managed and stripped == OB_HEADER:
-            skipping_unmanaged_ob = True
-            changed = True
+    remove: set[int] = set()
+    for position, (start, _name) in enumerate(headers):
+        if start not in duplicate_starts:
+            continue
+        end = headers[position + 1][0] if position + 1 < len(headers) else len(lines)
+        for index in range(start, end):
+            stripped = lines[index].strip()
+            # Keep comments (especially Feedling's managed-block markers) and
+            # blank separators, but remove the stale table and its values.
+            if stripped and not stripped.startswith("#"):
+                remove.add(index)
 
-        if not skipping_unmanaged_ob:
-            output.append(line)
-
-        if stripped == MANAGED_END:
-            in_managed = False
-
-    repaired = "".join(output)
-    return repaired, changed
+    repaired = "".join(
+        line for index, line in enumerate(lines) if index not in remove
+    )
+    # Refuse to persist a repair that is still not valid TOML.
+    tomllib.loads(repaired)
+    return repaired, True
 
 
 def main() -> None:
@@ -66,7 +67,7 @@ def main() -> None:
     if changed:
         path.write_text(repaired)
         path.chmod(0o600)
-        print("Removed duplicate unmanaged Ombre Brain MCP table.", flush=True)
+        print("Removed duplicate tables from Codex MCP configuration.", flush=True)
 
 
 if __name__ == "__main__":
