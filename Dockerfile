@@ -3,7 +3,13 @@ FROM python:3.11-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/data/home \
-    CODEX_HOME=/data/codex
+    CODEX_HOME=/data/codex \
+    FEEDLING_AUTO_UPDATE=1
+
+# Start from the exact consumer release advertised by the current Feedling
+# backend. The resident's built-in updater remains enabled and can move forward
+# automatically when a later compatible release is advertised.
+ARG FEEDLING_COMMIT=feef5e44612bdeed3150b5cb06f900f7e558adbc
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -11,9 +17,12 @@ RUN apt-get update \
  && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
  && npm install -g @openai/codex@0.142.4 \
- && git clone --depth 1 --branch main \
+ && mkdir -p /app/feedling-mcp \
+ && git init /app/feedling-mcp \
+ && git -C /app/feedling-mcp remote add origin \
       https://github.com/teleport-computer/feedling-mcp.git \
-      /app/feedling-mcp \
+ && git -C /app/feedling-mcp fetch --depth 1 origin "$FEEDLING_COMMIT" \
+ && git -C /app/feedling-mcp checkout --detach FETCH_HEAD \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/feedling-mcp
