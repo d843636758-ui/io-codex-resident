@@ -75,10 +75,17 @@ if [ ! -f "$OB_OAUTH_MARKER" ]; then
   python /usr/local/bin/repair-codex-config \
     "$CONFIG_FILE" \
     --drop-table mcp_servers.ob
-  echo "临时 Ombre Brain MCP 配置已移除，后续由 IO 管理。"
+  echo "临时 Ombre Brain MCP 配置已移除。"
   cleanup_relay
   trap - EXIT INT TERM
 fi
+
+if ! codex mcp get ob >/dev/null 2>&1; then
+  echo "正在写入干净的 Ombre Brain MCP 配置。"
+  codex mcp add ob --url "$OB_MCP_URL"
+fi
+
+echo "Ombre Brain MCP 配置已就绪。"
 
 ONBOARD_MARKER=/data/feedling/onboarding_done
 VERIFY_MARKER=/data/feedling/chat_verified
