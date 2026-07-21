@@ -15,6 +15,7 @@ CONFIG_FILE="$CODEX_HOME/config.toml"
 if [ ! -f "$CONFIG_FILE" ]; then
   cat > "$CONFIG_FILE" <<'EOF'
 cli_auth_credentials_store = "file"
+mcp_oauth_credentials_store = "file"
 approval_policy = "never"
 sandbox_mode = "workspace-write"
 
@@ -43,6 +44,12 @@ OB_CALLBACK_PUBLIC_URL="${OB_CALLBACK_PUBLIC_URL:-https://ioob.zeabur.app}"
 OB_CALLBACK_PUBLIC_PORT="${OB_CALLBACK_PUBLIC_PORT:-1455}"
 OB_CALLBACK_LOCAL_PORT="${OB_CALLBACK_LOCAL_PORT:-1456}"
 OB_OAUTH_MARKER=/data/feedling/ob_oauth_done
+OB_CREDENTIALS_FILE="$CODEX_HOME/.credentials.json"
+
+if [ ! -f "$OB_OAUTH_MARKER" ] && [ -s "$OB_CREDENTIALS_FILE" ]; then
+  touch "$OB_OAUTH_MARKER"
+  echo "检测到已保存的 MCP OAuth 凭据，跳过重复授权。"
+fi
 
 if [ ! -f "$OB_OAUTH_MARKER" ]; then
   if ! codex mcp get ob >/dev/null 2>&1; then
