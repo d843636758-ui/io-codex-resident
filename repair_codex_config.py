@@ -12,6 +12,14 @@ from pathlib import Path
 TABLE_HEADER = re.compile(r"^\s*\[([^\[\]]+)]\s*(?:#.*)?$")
 ASSIGNMENT = re.compile(r"^\s*([^=]+?)\s*=")
 INLINE_TABLE = re.compile(r"^(\s*[^=]+?=\s*)\{(.*)}(\s*(?:#.*)?)$")
+SAFE_BASELINE = """cli_auth_credentials_store = "file"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true
+writable_roots = ["/data"]
+"""
 
 
 def _split_inline_items(value: str) -> list[str]:
@@ -147,9 +155,33 @@ def repair(text: str) -> tuple[str, bool]:
     return repaired, True
 
 
+def drop_table(text: str, table_name: str) -> tuple[str, bool]:
+    lines = text.splitlines(keepends=True)
+    output: list[str] = []
+    dropping = False
+    changed = False
+    for line in lines:
+        table = TABLE_HEADER.match(line)
+        if table:
+            dropping = table.group(1).strip() == table_name
+            if dropping:
+                changed = True
+                continue
+        if dropping:
+            stripped = line.strip()
+            if stripped.startswith("#") or not stripped:
+                output.append(line)
+            continue
+        output.append(line)
+    result = "".join(output)
+    tomllib.loads(result)
+    return result, changed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("config_path")
+    parser.add_argument("--drop-table")
     args = parser.parse_args()
 
     path = Path(args.config_path)
@@ -157,11 +189,27 @@ def main() -> None:
         return
 
     original = path.read_text()
-    repaired, changed = repair(original)
+    try:
+        repaired, changed = repair(original)
+    except tomllib.TOMLDecodeError:
+        backup = path.with_name("config.toml.invalid.bak")
+        backup.write_text(original)
+        backup.chmod(0o600)
+        repaired = SAFE_BASELINE
+        changed = True
+        print(
+            "Reset invalid Codex configuration to a safe baseline; "
+            "OAuth credentials were preserved.",
+            flush=True,
+        )
+
+    if args.drop_table:
+        repaired, dropped = drop_table(repaired, args.drop_table)
+        changed = changed or dropped
     if changed:
         path.write_text(repaired)
         path.chmod(0o600)
-        print("Removed duplicate tables from Codex MCP configuration.", flush=True)
+        print("Codex configuration repair completed.", flush=True)
 
 
 if __name__ == "__main__":
