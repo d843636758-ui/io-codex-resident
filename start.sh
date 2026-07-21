@@ -10,6 +10,34 @@ mkdir -p \
 
 chmod 700 "$CODEX_HOME"
 
+# Keep the resident agent in a stable persistent workspace and teach it where
+# IO-native perception lives. HealthKit data is surfaced by Feedling's native
+# CLI after the iPhone has uploaded it; it is not a separately registered MCP.
+export FEEDLING_AGENT_CLI_CWD=/data/workspace
+RESIDENT_GUIDE=/data/workspace/AGENTS.md
+GUIDE_MARKER="feedling-io-native-perception-v1"
+if ! grep -q "$GUIDE_MARKER" "$RESIDENT_GUIDE" 2>/dev/null; then
+  cat >> "$RESIDENT_GUIDE" <<'EOF'
+
+<!-- feedling-io-native-perception-v1 -->
+## IO native identity, memory, and perception
+
+For IO health or perception requests, do not search the MCP registry for a
+HealthKit server. Use Feedling's native CLI from its absolute path:
+
+`python /app/feedling-mcp/tools/io_cli.py perception steps sleep workout vitals activity body metabolic cycle`
+
+Use `perception-trend` or `perception-history` only when the user asks for a
+trend or history. The iPhone HealthKit permission, Feedling capability switch,
+and availability of a recent uploaded sample are separate states. Report the
+CLI's real result and do not infer that authorization is missing merely because
+there is no HealthKit MCP tool.
+
+Use the same native CLI for IO identity and Memory Garden operations. Do not
+substitute OB or another external MCP unless the user explicitly asks for it.
+EOF
+fi
+
 CONFIG_FILE="$CODEX_HOME/config.toml"
 
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -93,6 +121,14 @@ if ! codex mcp get ob >/dev/null 2>&1; then
 fi
 
 echo "Ombre Brain MCP 配置已就绪。"
+
+# A tool-rich Codex turn can legitimately exceed the upstream 180 second
+# default. Give it room to finish, but never leave the user with a silent turn
+# when the cap is actually hit. These runtime safety values intentionally win
+# over stale Zeabur variables from earlier troubleshooting.
+export FEEDLING_AGENT_TURN_TIMEOUT_SEC=360
+export SEND_FALLBACK_ON_AGENT_ERROR=true
+echo "IO 对话上限已设为 360 秒，错误兜底回复已开启。"
 
 ONBOARD_MARKER=/data/feedling/onboarding_done
 VERIFY_MARKER=/data/feedling/chat_verified
