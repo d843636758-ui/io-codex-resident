@@ -44,12 +44,12 @@ OB_CALLBACK_PUBLIC_PORT="${OB_CALLBACK_PUBLIC_PORT:-1455}"
 OB_CALLBACK_LOCAL_PORT="${OB_CALLBACK_LOCAL_PORT:-1456}"
 OB_OAUTH_MARKER=/data/feedling/ob_oauth_done
 
-if ! codex mcp get ob >/dev/null 2>&1; then
-  echo "正在添加 Ombre Brain MCP。"
-  codex mcp add ob --url "$OB_MCP_URL"
-fi
-
 if [ ! -f "$OB_OAUTH_MARKER" ]; then
+  if ! codex mcp get ob >/dev/null 2>&1; then
+    echo "正在添加临时 Ombre Brain MCP 配置。"
+    codex mcp add ob --url "$OB_MCP_URL"
+  fi
+
   echo "正在启动 Ombre Brain OAuth 回调中转。"
   python -u /usr/local/bin/oauth-callback-relay \
     --listen-port "$OB_CALLBACK_PUBLIC_PORT" \
@@ -72,6 +72,10 @@ if [ ! -f "$OB_OAUTH_MARKER" ]; then
 
   touch "$OB_OAUTH_MARKER"
   echo "Ombre Brain OAuth 授权完成。"
+  python /usr/local/bin/repair-codex-config \
+    "$CONFIG_FILE" \
+    --drop-table mcp_servers.ob
+  echo "临时 Ombre Brain MCP 配置已移除，后续由 IO 管理。"
   cleanup_relay
   trap - EXIT INT TERM
 fi
