@@ -22,7 +22,8 @@ RUN python -m pip install --no-cache-dir \
       -r tools/chat_resident_requirements.txt
 
 COPY start.sh /usr/local/bin/start-resident
+COPY oauth_callback_relay.py /usr/local/bin/oauth-callback-relay
 
-RUN chmod 755 /usr/local/bin/start-resident
+RUN chmod 755 /usr/local/bin/start-resident /usr/local/bin/oauth-callback-relay
 
 CMD ["/usr/local/bin/start-resident"]
