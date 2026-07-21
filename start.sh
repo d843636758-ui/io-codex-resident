@@ -26,6 +26,11 @@ EOF
   chmod 600 "$CONFIG_FILE"
 fi
 
+# Feedling materializes IO user MCPs into a managed config block. During the
+# first OAuth setup we also need a temporary unmanaged OB table; after the
+# managed block exists, keeping both creates duplicate TOML table headers.
+python /usr/local/bin/repair-codex-config "$CONFIG_FILE"
+
 if [ ! -s "$CODEX_HOME/auth.json" ]; then
   echo "Codex 尚未登录，请使用日志中的网址和设备代码授权。"
   codex login --device-auth
