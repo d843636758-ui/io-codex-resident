@@ -38,6 +38,39 @@ substitute OB or another external MCP unless the user explicitly asks for it.
 EOF
 fi
 
+# Codex can defer MCP tools and expose only the tools that matched its latest
+# search. Teach the resident that this visible subset is not a server inventory,
+# and make the user's ordered persistence contract explicit. A separate marker
+# lets existing deployments receive this addition without replacing their
+# earlier IO-native perception guide.
+OB_GUIDE_MARKER="feedling-io-ob-write-order-v1"
+if ! grep -q "$OB_GUIDE_MARKER" "$RESIDENT_GUIDE" 2>/dev/null; then
+  cat >> "$RESIDENT_GUIDE" <<'EOF'
+
+<!-- feedling-io-ob-write-order-v1 -->
+## Ombre Brain writes and ordered persistence
+
+MCP tools may be loaded on demand. The tools visible after one search are only
+the currently surfaced subset, never proof of a server's complete inventory.
+Do not use Ombre Brain `pulse`, `dream`, or another read tool to conclude that
+write tools are absent.
+
+When the user asks to save something in Ombre Brain, explicitly search for the
+exact leaf tool names `hold`, `grow`, and `trace` before claiming that OB cannot
+write. Use `hold` for one new factual memory, `grow` for a longer passage or
+several memories, and `trace` only to edit a known existing bucket. A successful
+OB write requires the tool's real success receipt, normally including a
+`bucket_id`; merely calling `pulse` or reading state is not a write.
+
+When the user requires the sequence OB -> emotion -> Eventide, finish and verify
+the OB write first. Continue to emotion only after OB succeeds, then continue to
+Eventide only after emotion succeeds. If any step fails or the required tool
+cannot be loaded, stop the chain at that step, report the exact error, and do not
+substitute another system or claim success. Apply the user's data-minimization
+request when deciding what content to persist.
+EOF
+fi
+
 CONFIG_FILE="$CODEX_HOME/config.toml"
 
 if [ ! -f "$CONFIG_FILE" ]; then
