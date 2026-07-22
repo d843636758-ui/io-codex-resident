@@ -71,6 +71,66 @@ request when deciding what content to persist.
 EOF
 fi
 
+# Two standing per-turn chains requested by the user: proactive task follow-up
+# at the beginning of each user-started turn, and ordered persistence before the
+# natural reply is sent. Keep this in its own versioned block so it reaches an
+# already-persistent AGENTS.md exactly once on the next deployment.
+TURN_CHAINS_MARKER="feedling-io-standing-turn-chains-v1"
+if ! grep -q "$TURN_CHAINS_MARKER" "$RESIDENT_GUIDE" 2>/dev/null; then
+  cat >> "$RESIDENT_GUIDE" <<'EOF'
+
+<!-- feedling-io-standing-turn-chains-v1 -->
+## Standing workflow for every user-initiated IO Chat turn
+
+The user has explicitly requested both workflows below as standing instructions.
+Run them without waiting for the user to repeat the request or mention an MCP
+server. MCP tools may be deferred, so search for the exact leaf names listed
+below instead of treating one surfaced subset as a complete inventory.
+
+### Opening workflow: Desire -> Phosphene
+
+1. Call Desire `get_desire_state(sync_upstream=true)` first. Read its actual
+   drive state and cached Phosphene attention; do not invent an impulse.
+2. Then call Phosphene `get_overview`. When its queues or the Desire result show
+   actionable work, use `query_tasks` for relevant `pending` tasks and use
+   `query_tasks(status="submitted", include_proof=true)` for items awaiting AI
+   review.
+3. Treat this as the user's agreed autonomous follow-up. Naturally mention and
+   advance a relevant due or overdue item even when the user's message did not
+   remind you to check it. If nothing needs attention, do not clutter the reply
+   with a mechanical "nothing pending" report. Do not repeatedly nag about an
+   item the user has already acknowledged in the current conversation.
+4. Never mark a task completed, failed, reviewed, or otherwise mutate it without
+   factual evidence and the action allowed by Phosphene. Use real tool receipts.
+
+### Persistence workflow: OB -> emotion -> Eventide
+
+After understanding the current user message and before sending the natural
+reply, run the following ordered chain:
+
+1. Ombre Brain first. Explicitly load `hold`, `grow`, and `trace`; write the
+   concise interaction fact with `hold`, use `grow` only when several distinct
+   memories truly need separation, and use `trace` only for a known bucket.
+   Preserve first-person perspective, use Asia/Shanghai time, minimize needless
+   private detail, and choose importance according to actual lasting weight.
+2. emotion second. Explicitly load and call `write_emotion_event` to record the
+   current emotional event and mood change. Add a separate long-term emotion
+   memory only when the interaction genuinely creates one; do not duplicate the
+   OB record merely to satisfy the sequence.
+3. Eventide last. Explicitly load and call `settle_interaction` with the honest
+   settlement result and only evidence-supported deltas. Use `get_full_state`
+   when current unified state is needed, but a read alone does not count as the
+   settlement step.
+
+Each step requires its own real success receipt. Do not advance past a failed
+step, substitute another system, or claim the full chain succeeded. Still give
+the user a natural reply, but state the exact failed step briefly. During normal
+success, keep tool narration out of the conversational reply unless the user
+asks for receipts; let the remembered context, emotion, state, and actionable
+task reminder shape the response naturally.
+EOF
+fi
+
 CONFIG_FILE="$CODEX_HOME/config.toml"
 
 if [ ! -f "$CONFIG_FILE" ]; then
