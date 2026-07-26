@@ -4,13 +4,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/data/home \
     CODEX_HOME=/data/codex \
-    FEEDLING_AUTO_UPDATE=0
+    FEEDLING_AUTO_UPDATE=1
 
-# Start from the exact consumer release advertised by the current Feedling
-# backend. Auto-update is temporarily disabled because this image carries a
-# compatibility patch for Codex 0.142 multi-message output. Re-enable it once
-# the same fix ships upstream, otherwise checkout would overwrite the patch.
-ARG FEEDLING_COMMIT=be8beab497a220ec9797c51997f2607f8c166a3a
+# Start from the current stable Feedling release. The resident's built-in
+# updater remains enabled so later backend-advertised compatible releases can
+# be adopted without rebuilding this image.
+ARG FEEDLING_COMMIT=fa0389c8f6af45b4a0c7c1a83a7d2f7ecb8fbdb0
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -28,11 +27,7 @@ RUN apt-get update \
 
 WORKDIR /app/feedling-mcp
 
-COPY patch_feedling_codex_reply.py /usr/local/bin/patch-feedling-codex-reply
-
-RUN python /usr/local/bin/patch-feedling-codex-reply \
-      tools/chat_resident_consumer.py \
- && python -m pip install --no-cache-dir \
+RUN python -m pip install --no-cache-dir \
       -r tools/chat_resident_requirements.txt
 
 COPY start.sh /usr/local/bin/start-resident
@@ -42,7 +37,6 @@ COPY repair_codex_config.py /usr/local/bin/repair-codex-config
 RUN chmod 755 \
       /usr/local/bin/start-resident \
       /usr/local/bin/oauth-callback-relay \
-      /usr/local/bin/repair-codex-config \
-      /usr/local/bin/patch-feedling-codex-reply
+      /usr/local/bin/repair-codex-config
 
 CMD ["/usr/local/bin/start-resident"]
