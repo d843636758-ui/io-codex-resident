@@ -131,6 +131,77 @@ task reminder shape the response naturally.
 EOF
 fi
 
+# The v1 chain correctly names user-initiated turns, but a CLI model can still
+# mistake Feedling's proactive wake prompt for a user message and run the full
+# persistence chain. Append an explicit higher-priority classifier and document
+# OB's source-backed feel contract. A new marker upgrades existing persistent
+# AGENTS.md files exactly once without rewriting the user's other instructions.
+TURN_CHAINS_V2_MARKER="feedling-io-turn-classification-ob-feel-v2"
+if ! grep -q "$TURN_CHAINS_V2_MARKER" "$RESIDENT_GUIDE" 2>/dev/null; then
+  cat >> "$RESIDENT_GUIDE" <<'EOF'
+
+<!-- feedling-io-turn-classification-ob-feel-v2 -->
+## Turn classification and OB feel safety (v2; overrides conflicting v1 rules)
+
+Apply this v2 block before either standing workflow. Where an earlier resident
+guide is broader or ambiguous, this block takes precedence.
+
+### Classify the turn before using standing workflows
+
+A genuine user-authored turn contains a message the user deliberately sent in
+IO Chat. Only that kind of turn runs the standing Desire -> Phosphene opening
+workflow and the OB -> emotion -> Eventide persistence workflow.
+
+The following are background/system turns, not user-authored turns:
+
+- `[Feedling proactive wake]`, presence checks, heartbeats, screen-watch jobs,
+  scheduled wakes, and low-resolution perception glances;
+- resident maintenance, capture/dream/migrate jobs, health checks, retry prompts,
+  and other system-generated instructions;
+- a model's own silence decision, reasoning, tool output, or error recovery.
+
+On a background/system turn, follow that turn's own reply protocol exactly.
+For a proactive wake, decide whether to speak or return `proactive.sleep`; do not
+run either standing chain merely because the wake prompt arrived. Do not create
+OB, emotion, or Eventide records for the wake itself, routine quiet presence,
+internal reasoning, or a tool error. A later real user reply is a new genuine
+user-authored turn and may be persisted normally.
+
+### Choose the correct Ombre Brain write mode
+
+For a genuine user-authored interaction fact, `hold` means ordinary memory:
+omit `feel` or pass `feel=false`. Use `grow` only for several distinct memories,
+and use `trace` only when editing a known existing bucket.
+
+`hold(feel=true)` is not a generic emotional write. It means "I digested this
+specific existing OB memory and formed a first-person feeling about it." It is
+valid only when all of the following are true:
+
+1. `dream` or `breath_search(query=...)` returned the existing source memory;
+2. the exact returned `bucket_id` is passed as `source_bucket`;
+3. the content is genuinely a reflection on that source, not a new interaction
+   fact, proactive output, presence check, reminder, or error report.
+
+If no valid source bucket is available, do not call `feel=true`, do not invent an
+ID, and do not retry with an empty source. Use ordinary `hold` only when there is
+an independent long-term fact worth remembering; otherwise skip the OB write.
+An error saying `source_bucket` is required means the wrong write mode was
+selected, not that OB connectivity or ordinary writes are broken.
+
+### Contain persistence failures without losing the reply
+
+On a genuine user-authored turn, keep the ordered chain and stop it at the first
+failed step, but still answer the user's actual message fully in a natural voice.
+A persistence error is secondary: append at most one brief factual sentence
+after the real answer. Never replace the answer with a bare tool error, internal
+progress report, PID/path detail, or instructions intended for an operator.
+
+On a proactive/background turn, persistence is not required and therefore
+cannot block, replace, or become the visible proactive message. Never schedule
+another wake solely to retry a persistence failure.
+EOF
+fi
+
 CONFIG_FILE="$CODEX_HOME/config.toml"
 
 if [ ! -f "$CONFIG_FILE" ]; then
