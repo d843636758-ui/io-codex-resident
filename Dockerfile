@@ -10,6 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # updater remains enabled so later backend-advertised compatible releases can
 # be adopted without rebuilding this image.
 ARG FEEDLING_COMMIT=2542b971b2faadc05f5003af7ac1b0d0131af046
+ARG GARDEN_BRIDGE_COMMIT=f52498590e222c9b897da4e19de0b6ce54b50bae
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -23,6 +24,14 @@ RUN apt-get update \
       https://github.com/teleport-computer/feedling-mcp.git \
  && git -C /app/feedling-mcp fetch --depth 1 origin "$FEEDLING_COMMIT" \
  && git -C /app/feedling-mcp checkout --detach FETCH_HEAD \
+ && mkdir -p /opt/galatea-garden-wake-bridge \
+ && git init /opt/galatea-garden-wake-bridge \
+ && git -C /opt/galatea-garden-wake-bridge remote add origin \
+      https://github.com/d843636758-ui/galatea-garden-wake-bridge.git \
+ && git -C /opt/galatea-garden-wake-bridge fetch --depth 1 origin "$GARDEN_BRIDGE_COMMIT" \
+ && git -C /opt/galatea-garden-wake-bridge checkout --detach FETCH_HEAD \
+ && npm --prefix /opt/galatea-garden-wake-bridge ci \
+ && npm --prefix /opt/galatea-garden-wake-bridge run build \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/feedling-mcp
@@ -34,11 +43,13 @@ COPY start.sh /usr/local/bin/start-resident
 COPY oauth_callback_relay.py /usr/local/bin/oauth-callback-relay
 COPY repair_codex_config.py /usr/local/bin/repair-codex-config
 COPY resident_garden_wrapper.py /usr/local/bin/resident-garden-wrapper.py
+COPY garden_bridge_control.py /usr/local/bin/garden-bridge-control
 
 RUN chmod 755 \
       /usr/local/bin/start-resident \
       /usr/local/bin/oauth-callback-relay \
       /usr/local/bin/repair-codex-config \
-      /usr/local/bin/resident-garden-wrapper.py
+      /usr/local/bin/resident-garden-wrapper.py \
+      /usr/local/bin/garden-bridge-control
 
 CMD ["/usr/local/bin/start-resident"]
