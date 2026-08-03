@@ -24,3 +24,18 @@ allow-list only when necessary:
 ```text
 FEEDLING_GARDEN_MCP_NAMES=garden
 ```
+
+The Garden bridge build is bundled under `/opt/galatea-garden-wake-bridge`, but
+it is never started by the container entrypoint and has no watchdog. This keeps
+the upstream single-connection, fail-closed contract intact even on Zeabur.
+After adding `GARDEN_MACHINE_TOKEN` as a protected environment variable, use a
+real user-authored IO turn to run:
+
+```text
+python /usr/local/bin/garden-bridge-control check
+python /usr/local/bin/garden-bridge-control start
+```
+
+The controller also provides `status` and `stop`. A bridge failure remains
+stopped until another explicit check and start; container boot, proactive wakes,
+and maintenance turns must never start it automatically.
