@@ -246,6 +246,21 @@ After a successful ordinary game action, normally complete quietly with
 ends, the action cannot proceed without the user's real-world choice, or a
 durable error needs attention. Never claim a Garden write succeeded without
 the tool's success receipt.
+
+The bridge executable is bundled in this IO image but has a deliberately
+manual lifecycle. Only when the user explicitly asks to check, start, inspect,
+or stop the Garden bridge, run exactly one of:
+
+- `python /usr/local/bin/garden-bridge-control check`
+- `python /usr/local/bin/garden-bridge-control start`
+- `python /usr/local/bin/garden-bridge-control status`
+- `python /usr/local/bin/garden-bridge-control stop`
+
+Report the command's real JSON result. Never start or restart it from a
+heartbeat, scheduled wake, maintenance turn, container boot, failure handler,
+or timer. If it exits or disconnects, leave it stopped until the user explicitly
+requests a new `check` and `start`; this fail-closed rule is part of the Garden
+service safety contract.
 EOF
 fi
 
