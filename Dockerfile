@@ -33,10 +33,12 @@ RUN python -m pip install --no-cache-dir \
 COPY start.sh /usr/local/bin/start-resident
 COPY oauth_callback_relay.py /usr/local/bin/oauth-callback-relay
 COPY repair_codex_config.py /usr/local/bin/repair-codex-config
+COPY resident_garden_wrapper.py /usr/local/bin/resident-garden-wrapper.py
 
 RUN chmod 755 \
       /usr/local/bin/start-resident \
       /usr/local/bin/oauth-callback-relay \
-      /usr/local/bin/repair-codex-config
+      /usr/local/bin/repair-codex-config \
+      /usr/local/bin/resident-garden-wrapper.py
 
 CMD ["/usr/local/bin/start-resident"]
