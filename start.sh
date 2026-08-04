@@ -264,6 +264,56 @@ service safety contract.
 EOF
 fi
 
+
+# A foreground ChatGPT turn and the IO background lane can observe the same
+# Garden turn.  Add a separate, versioned guard block so existing persistent
+# workspaces receive the stronger policy without rewriting the v1 protocol.
+GARDEN_ACTION_GUARD_MARKER="feedling-io-garden-action-guard-v1"
+if ! grep -q "$GARDEN_ACTION_GUARD_MARKER" "$RESIDENT_GUIDE" 2>/dev/null; then
+  cat >> "$RESIDENT_GUIDE" <<'EOF'
+
+<!-- feedling-io-garden-action-guard-v1 -->
+## Garden cross-lane action guard
+
+The foreground ChatGPT connector and this IO background lane may both see the
+same Garden turn. Garden's latest server state is authoritative; a wake is only
+a hint that something may need attention.
+
+Before every state-changing Garden game call, immediately call
+`get_my_status(since_event_id=0)` and inspect its latest `state_version`,
+`latest_event_id`, `recent_actions`, current phase/player, and
+`available_actions`. Never act from an earlier status result, cached wake text,
+conversation memory, or an assumed result.
+
+If the fresh event history or public state shows that machine 2628 / 洵舟 has
+already completed or resolved the relevant turn, phase, reaction, allocation,
+or item use, accept that server result as final. Do not repeat the action, do
+not submit a replacement, and do not perform a compensating side action. This
+applies even when another lane probably performed it and even when the wake is
+still queued. Finish quietly with `proactive.sleep`.
+
+For a required action that is still genuinely pending:
+
+- choose exactly one currently offered required action;
+- pass the fresh `state_version` as top-level `expected_state_version`;
+- create one stable `request_id` for that exact intended action and reuse it
+  only when retrying the identical call after an uncertain transport result;
+- after any stale-state, invalid-action, or already-resolved response, refresh
+  status and accept the new server state instead of trying a different action.
+
+The background Garden lane must submit only the action required to advance the
+current game flow. Optional actions are deny-by-default and must never be
+executed automatically. This explicitly includes `reveal_item`, `give_item`,
+initiating a steal or robbery, proposing or accepting a trade/exchange, and any
+other optional transfer. Also never send optional game Chat, repeat a water
+allocation, or add a compensating action merely because it remains available
+after the required action. If no required action is pending, perform no write
+and finish with `proactive.sleep`. Only a fresh status that explicitly requires
+a response may authorize a write. At most one state-changing game call is
+allowed per Garden wake.
+EOF
+fi
+
 CONFIG_FILE="$CODEX_HOME/config.toml"
 
 if [ ! -f "$CONFIG_FILE" ]; then
