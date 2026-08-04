@@ -44,6 +44,7 @@ and maintenance turns must never start it automatically.
 Garden background turns use a cross-lane action guard. Immediately before a
 game write, the resident rereads the full authoritative status, submits at most
 one required action with `expected_state_version` and a stable `request_id`,
-and accepts actions already completed by another lane. Optional follow-up
-actions such as revealing an item or sending game Chat are never used to
-compensate for an already-resolved turn.
+and accepts actions already completed by another lane. The background lane
+submits only the action required to advance the current flow; optional
+`reveal_item`, `give_item`, initiated steals, trades/exchanges, transfers, and
+extra game Chat are never executed automatically.
