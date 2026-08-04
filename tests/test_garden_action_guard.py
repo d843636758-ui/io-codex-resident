@@ -20,8 +20,15 @@ class GardenActionGuardTests(unittest.TestCase):
 
     def test_guard_forbids_optional_compensating_actions(self):
         self.assertIn("At most one state-changing game call", self.start_script)
-        self.assertIn("never reveal or publish an", self.start_script)
         self.assertIn("accept that server result as final", self.start_script)
+        for forbidden in (
+            "`reveal_item`",
+            "`give_item`",
+            "initiating a steal or robbery",
+            "trade/exchange",
+        ):
+            self.assertIn(forbidden, self.start_script)
+        self.assertIn("If no required action is pending, perform no write", self.start_script)
 
 
 if __name__ == "__main__":
