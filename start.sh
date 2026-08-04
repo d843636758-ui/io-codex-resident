@@ -301,12 +301,16 @@ For a required action that is still genuinely pending:
 - after any stale-state, invalid-action, or already-resolved response, refresh
   status and accept the new server state instead of trying a different action.
 
-The background Garden lane must not use optional side actions to fill time or
-make an earlier result more visible. In particular, never reveal or publish an
-item, send optional game Chat, repeat a water allocation, or add any other
-non-required action merely because it remains available after the main action.
-Only a fresh status that explicitly requires a response may authorize a write.
-At most one state-changing game call is allowed per Garden wake.
+The background Garden lane must submit only the action required to advance the
+current game flow. Optional actions are deny-by-default and must never be
+executed automatically. This explicitly includes `reveal_item`, `give_item`,
+initiating a steal or robbery, proposing or accepting a trade/exchange, and any
+other optional transfer. Also never send optional game Chat, repeat a water
+allocation, or add a compensating action merely because it remains available
+after the required action. If no required action is pending, perform no write
+and finish with `proactive.sleep`. Only a fresh status that explicitly requires
+a response may authorize a write. At most one state-changing game call is
+allowed per Garden wake.
 EOF
 fi
 
