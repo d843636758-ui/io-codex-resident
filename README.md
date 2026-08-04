@@ -39,3 +39,11 @@ python /usr/local/bin/garden-bridge-control start
 The controller also provides `status` and `stop`. A bridge failure remains
 stopped until another explicit check and start; container boot, proactive wakes,
 and maintenance turns must never start it automatically.
+
+
+Garden background turns use a cross-lane action guard. Immediately before a
+game write, the resident rereads the full authoritative status, submits at most
+one required action with `expected_state_version` and a stable `request_id`,
+and accepts actions already completed by another lane. Optional follow-up
+actions such as revealing an item or sending game Chat are never used to
+compensate for an already-resolved turn.
