@@ -6,6 +6,11 @@ The image starts Feedling through `resident_garden_wrapper.py`. The wrapper
 does not edit `/app/feedling-mcp`, so Feedling's self-update keeps a clean git
 tree and re-execs through the wrapper after an update.
 
+The image is based on Feedling `9aa28331c4d71a3ef270fb047c216481305b904f`
+(the 2026-08-08 stable `main` release). If a later self-update removes a private
+hook used by the selective Garden lane, the wrapper disables only that lane and
+continues ordinary IO Chat with Feedling's default background MCP isolation.
+
 When Feedling receives a proactive trigger beginning with `garden_wake_`, the
 wrapper creates a background-only `garden` lane. On Codex this lane keeps the
 Garden user MCP enabled and explicitly disables every other materialized user
