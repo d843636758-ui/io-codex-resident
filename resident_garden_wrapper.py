@@ -37,10 +37,37 @@ def _is_garden_wake_prompt(message: Any) -> bool:
     return bool(GARDEN_TRIGGER_RE.search(str(message or "")))
 
 
-def install_patches(resident, materializer) -> None:
-    """Install idempotent, runtime-local patches on a consumer module."""
+def install_patches(resident, materializer) -> bool:
+    """Install idempotent, runtime-local patches on a consumer module.
+
+    Feedling is allowed to self-update independently of this wrapper. If a
+    future release changes the private hook contract, leave the ordinary
+    resident running without the Garden lane instead of crashing IO Chat. The
+    normal background policy disables user MCPs, so this fallback is also
+    fail-closed for Garden writes.
+    """
     if getattr(resident, "_garden_wake_wrapper_installed", False):
-        return
+        return True
+
+    required_resident = (
+        "_user_mcp_cli_value",
+        "_user_mcp_applied",
+        "_cli_template_is_codex",
+        "call_agent",
+        "log",
+    )
+    missing = [name for name in required_resident if not hasattr(resident, name)]
+    if not hasattr(materializer, "effective_transport"):
+        missing.append("user_mcp_materialize.effective_transport")
+    if missing:
+        logger = getattr(resident, "log", None)
+        if logger is not None:
+            logger.error(
+                "[garden_wake] upstream compatibility contract changed; "
+                "Garden lane disabled while ordinary IO Chat continues; missing=%s",
+                ",".join(missing),
+            )
+        return False
 
     original_mcp_value = resident._user_mcp_cli_value
     allowed_names = _allowed_mcp_names()
@@ -112,6 +139,7 @@ def install_patches(resident, materializer) -> None:
     resident._user_mcp_cli_value = garden_mcp_value
     resident.call_agent = garden_call_agent
     resident._garden_wake_wrapper_installed = True
+    return True
 
 
 def main() -> None:

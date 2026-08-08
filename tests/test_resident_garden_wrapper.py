@@ -98,6 +98,22 @@ class GardenWrapperTests(unittest.TestCase):
         value = FakeResident._user_mcp_cli_value("codex {mcp}", "chat")
         self.assertEqual(value, "original:chat")
 
+    def test_upstream_contract_change_keeps_io_chat_running(self):
+        class FutureResident:
+            log = logging.getLogger("garden-wrapper-contract-test")
+            _garden_wake_wrapper_installed = False
+
+            @staticmethod
+            def call_agent(message, lane="background"):
+                return {"message": message, "lane": lane}
+
+        original = FutureResident.call_agent
+        installed = WRAPPER.install_patches(FutureResident, Materializer)
+
+        self.assertFalse(installed)
+        self.assertIs(FutureResident.call_agent, original)
+        self.assertFalse(FutureResident._garden_wake_wrapper_installed)
+
 
 if __name__ == "__main__":
     unittest.main()
