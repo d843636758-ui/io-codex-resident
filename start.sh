@@ -314,6 +314,43 @@ allowed per Garden wake.
 EOF
 fi
 
+# Keep technical/operator diagnostics bounded so a failed probe cannot consume the
+# entire Codex subprocess window and make an otherwise healthy IO turn look
+# broken. This block is intentionally additive for already-persistent workspaces.
+LIGHTWEIGHT_DIAGNOSTICS_MARKER="feedling-io-lightweight-diagnostics-v1"
+if ! grep -q "$LIGHTWEIGHT_DIAGNOSTICS_MARKER" "$RESIDENT_GUIDE" 2>/dev/null; then
+  cat >> "$RESIDENT_GUIDE" <<'EOF'
+
+<!-- feedling-io-lightweight-diagnostics-v1 -->
+## Lightweight operator diagnostics (v1)
+
+When the user asks to diagnose IO, the resident, deployment, or proactive wakes,
+and explicitly says to skip the standing workflows, honor that request even
+though the message is user-authored. Do not run Desire, Phosphene, Xinchao, OB,
+emotion, Eventide, identity, perception, Garden, or unrelated MCP discovery for
+that diagnostic turn unless the user specifically asks for one of them.
+
+Start with the smallest local read-only evidence: the current Feedling commit,
+git cleanliness, the relevant non-secret environment switches, and recent
+consumer log/status lines. Use Feedling's native CLI only for the exact fact it
+can answer. Do not run a broad `doctor` probe merely to answer one runtime
+question, and do not substitute legacy V1 dashboard counters for Runtime V2
+wake activity.
+
+Treat admin-only, unavailable, unsupported, or timed-out status fields as
+partial evidence, not a reason to scan more tools. Report the unavailable field
+once and continue with facts already obtained. Never print secrets. Never
+modify configuration, update code, restart a process, or start Garden during a
+read-only diagnostic.
+
+Keep the diagnostic bounded: avoid watchers and open-ended polling, stop adding
+new probes once the likely cause is identified, and preserve enough of the
+resident's subprocess window to send a concise partial answer. A useful partial
+diagnosis is better than reaching the hard turn timeout with no answer.
+EOF
+fi
+
+
 CONFIG_FILE="$CODEX_HOME/config.toml"
 
 if [ ! -f "$CONFIG_FILE" ]; then

@@ -9,7 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Start from the current stable Feedling release. The resident's built-in
 # updater remains enabled so later backend-advertised compatible releases can
 # be adopted without rebuilding this image.
-ARG FEEDLING_COMMIT=9aa28331c4d71a3ef270fb047c216481305b904f
+ARG FEEDLING_COMMIT=03d91022a3e3a54fcec06baae0b1f02e68e88d1d
 ARG GARDEN_BRIDGE_COMMIT=5ef71b0bb6f853fec490ce643a68f5b4e06d118d
 
 RUN apt-get update \
