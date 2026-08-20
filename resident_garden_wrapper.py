@@ -27,6 +27,91 @@ GARDEN_TRIGGER_RE = re.compile(
 PRESENCE_WAKE_RE = re.compile(r"(?m)^\[Feedling proactive wake\]\s*$")
 
 
+def _bounded_float_env(name: str, default: float, minimum: float) -> float:
+    try:
+        return max(minimum, float(os.environ.get(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+HTTP_TIMEOUT_SEC = _bounded_float_env(
+    "FEEDLING_HTTP_TIMEOUT_SEC", 35.0, 10.0
+)
+HTTP_KEEPALIVE_EXPIRY_SEC = _bounded_float_env(
+    "FEEDLING_HTTP_KEEPALIVE_EXPIRY_SEC", 15.0, 1.0
+)
+
+
+def _resident_http_client(resident, *, verify: bool = True):
+    """Build a pool that retires idle edge connections before they go stale.
+
+    Feedling's upstream consumer intentionally shares one Client for its API
+    traffic.  On the IO deployment there are two extra reverse-proxy hops; an
+    idle TLS socket can therefore be closed before upstream's 60-second pool
+    expiry and surface as UNEXPECTED_EOF on the next poll.  Keep the shared
+    client, but retire idle sockets sooner and leave enough read time for the
+    resident's bounded long polls.
+    """
+    httpx_module = resident.httpx
+    return httpx_module.Client(
+        timeout=httpx_module.Timeout(
+            HTTP_TIMEOUT_SEC,
+            connect=min(10.0, HTTP_TIMEOUT_SEC),
+            pool=min(10.0, HTTP_TIMEOUT_SEC),
+        ),
+        verify=verify,
+        limits=httpx_module.Limits(
+            max_connections=100,
+            max_keepalive_connections=20,
+            keepalive_expiry=HTTP_KEEPALIVE_EXPIRY_SEC,
+        ),
+    )
+
+
+def _close_quietly(client: Any) -> None:
+    close = getattr(client, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
+
+
+def install_transport_resilience(resident) -> bool:
+    """Replace upstream's import-time pools without dirtying its checkout."""
+    if getattr(resident, "_io_transport_resilience_installed", False):
+        return True
+
+    logger = getattr(resident, "log", None)
+    if not hasattr(resident, "_HTTP") or not hasattr(resident, "httpx"):
+        if logger is not None:
+            logger.warning(
+                "[transport] upstream HTTP client hook missing; "
+                "using upstream transport unchanged"
+            )
+        return False
+
+    old_http = resident._HTTP
+    resident._HTTP = _resident_http_client(resident)
+    _close_quietly(old_http)
+
+    if str(getattr(resident, "FEEDLING_ENCLAVE_URL", "") or "").strip():
+        old_enclave = getattr(resident, "_ENCLAVE_CLIENT", None)
+        resident._ENCLAVE_CLIENT = _resident_http_client(
+            resident, verify=False
+        )
+        _close_quietly(old_enclave)
+
+    resident._io_transport_resilience_installed = True
+    if logger is not None:
+        logger.info(
+            "[transport] resilient pools installed timeout=%ss keepalive=%ss",
+            HTTP_TIMEOUT_SEC,
+            HTTP_KEEPALIVE_EXPIRY_SEC,
+        )
+    return True
+
+
 def _allowed_mcp_names() -> set[str]:
     raw = os.environ.get(
         "FEEDLING_GARDEN_MCP_NAMES",
@@ -215,6 +300,7 @@ def main() -> None:
     import chat_resident_consumer as resident  # noqa: PLC0415
     import user_mcp_materialize as materializer  # noqa: PLC0415
 
+    install_transport_resilience(resident)
     install_patches(resident, materializer)
     resident.run()
 

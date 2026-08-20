@@ -491,7 +491,13 @@ echo "Ombre Brain MCP 配置已就绪。"
 # over stale Zeabur variables from earlier troubleshooting.
 export FEEDLING_AGENT_TURN_TIMEOUT_SEC=360
 export SEND_FALLBACK_ON_AGENT_ERROR=true
-echo "IO 对话上限已设为 360 秒，错误兜底回复已开启。"
+# Keep the HTTP long poll below common edge-proxy idle cutoffs. The wrapper
+# also retires pooled TLS connections before an upstream edge can close them,
+# which prevents stale keep-alive reuse from surfacing as UNEXPECTED_EOF.
+export POLL_TIMEOUT=15
+export FEEDLING_HTTP_TIMEOUT_SEC=35
+export FEEDLING_HTTP_KEEPALIVE_EXPIRY_SEC=15
+echo "IO 对话上限已设为 360 秒；轮询与连接池韧性配置已启用。"
 
 ONBOARD_MARKER=/data/feedling/onboarding_done
 VERIFY_MARKER=/data/feedling/chat_verified

@@ -3,7 +3,9 @@ from __future__ import annotations
 import importlib.util
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +27,7 @@ class Materializer:
 class FakeResident:
     log = logging.getLogger("garden-wrapper-test")
     _garden_wake_wrapper_installed = False
+    _turn_reply_parse_failed = ""
     _user_mcp_applied = {
         "servers": [
             {"name": "garden", "enabled": True, "transport": "streamable-http"},
@@ -59,6 +62,7 @@ class FakeResident:
 class GardenWrapperTests(unittest.TestCase):
     def setUp(self):
         FakeResident._garden_wake_wrapper_installed = False
+        FakeResident._turn_reply_parse_failed = ""
         FakeResident.calls = []
         FakeResident._user_mcp_cli_value = staticmethod(
             lambda template, lane: f"original:{lane}"
@@ -77,11 +81,11 @@ class GardenWrapperTests(unittest.TestCase):
         )
         self.assertEqual(FakeResident.calls[-1]["lane"], "garden")
 
-    def test_ordinary_background_wake_stays_background(self):
+    def test_ordinary_presence_wake_uses_selective_presence_lane(self):
         FakeResident.call_agent(
             "[Feedling proactive wake]\n\nwake_metadata:\n- trigger: heartbeat\n"
         )
-        self.assertEqual(FakeResident.calls[-1]["lane"], "background")
+        self.assertEqual(FakeResident.calls[-1]["lane"], "presence")
 
     def test_coalesced_wake_still_uses_garden_lane(self):
         FakeResident.call_agent(
@@ -113,6 +117,44 @@ class GardenWrapperTests(unittest.TestCase):
         self.assertFalse(installed)
         self.assertIs(FutureResident.call_agent, original)
         self.assertFalse(FutureResident._garden_wake_wrapper_installed)
+
+
+class TransportResilienceTests(unittest.TestCase):
+    def test_replaces_backend_and_enclave_pools_and_closes_old_clients(self):
+        old_http = mock.Mock()
+        old_enclave = mock.Mock()
+        new_http = mock.Mock()
+        new_enclave = mock.Mock()
+        httpx_module = SimpleNamespace(
+            Client=mock.Mock(side_effect=[new_http, new_enclave]),
+            Timeout=mock.Mock(return_value="timeout-config"),
+            Limits=mock.Mock(return_value="limits-config"),
+        )
+        resident = SimpleNamespace(
+            _HTTP=old_http,
+            _ENCLAVE_CLIENT=old_enclave,
+            FEEDLING_ENCLAVE_URL="https://enclave.example",
+            httpx=httpx_module,
+            log=logging.getLogger("transport-wrapper-test"),
+        )
+
+        installed = WRAPPER.install_transport_resilience(resident)
+
+        self.assertTrue(installed)
+        self.assertIs(resident._HTTP, new_http)
+        self.assertIs(resident._ENCLAVE_CLIENT, new_enclave)
+        old_http.close.assert_called_once_with()
+        old_enclave.close.assert_called_once_with()
+        self.assertEqual(httpx_module.Client.call_count, 2)
+        self.assertTrue(httpx_module.Client.call_args_list[0].kwargs["verify"])
+        self.assertFalse(httpx_module.Client.call_args_list[1].kwargs["verify"])
+
+    def test_is_idempotent(self):
+        resident = SimpleNamespace(
+            _HTTP=mock.Mock(),
+            _io_transport_resilience_installed=True,
+        )
+        self.assertTrue(WRAPPER.install_transport_resilience(resident))
 
 
 if __name__ == "__main__":
