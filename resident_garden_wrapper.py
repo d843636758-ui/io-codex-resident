@@ -14,6 +14,8 @@ import inspect
 import os
 import re
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +70,85 @@ def _resident_http_client(resident, *, verify: bool = True):
     )
 
 
+class _RecyclingHttpClient:
+    """Rebuild stale edge pools and replay read-only requests promptly.
+
+    A failed long poll used to escape to Feedling's outer loop, whose capped
+    exponential backoff then left IO unreachable for roughly a minute at a
+    time.  Read-only requests are safe to replay. Mutating requests are never
+    replayed because the server may have committed them before disconnecting;
+    their pool is still recycled so the following attempt starts cleanly.
+    """
+
+    _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+    def __init__(self, resident, *, verify: bool = True):
+        self._resident = resident
+        self._verify = verify
+        self._lock = threading.RLock()
+        self._client = _resident_http_client(resident, verify=verify)
+
+    def _replace(self, failed_client: Any) -> None:
+        with self._lock:
+            if self._client is failed_client:
+                self._client = _resident_http_client(
+                    self._resident, verify=self._verify
+                )
+        _close_quietly(failed_client)
+
+    def request(self, method: str, url: Any, *args: Any, **kwargs: Any):
+        method_upper = str(method).upper()
+        max_attempts = 3 if method_upper in self._SAFE_METHODS else 1
+        for attempt in range(max_attempts):
+            with self._lock:
+                client = self._client
+            try:
+                return client.request(method, url, *args, **kwargs)
+            except self._resident.httpx.TransportError:
+                self._replace(client)
+                if attempt + 1 >= max_attempts:
+                    raise
+                time.sleep(0.25 * (attempt + 1))
+        raise RuntimeError("unreachable transport retry state")
+
+    def get(self, url: Any, *args: Any, **kwargs: Any):
+        return self.request("GET", url, *args, **kwargs)
+
+    def head(self, url: Any, *args: Any, **kwargs: Any):
+        return self.request("HEAD", url, *args, **kwargs)
+
+    def options(self, url: Any, *args: Any, **kwargs: Any):
+        return self.request("OPTIONS", url, *args, **kwargs)
+
+    def post(self, url: Any, *args: Any, **kwargs: Any):
+        return self.request("POST", url, *args, **kwargs)
+
+    def put(self, url: Any, *args: Any, **kwargs: Any):
+        return self.request("PUT", url, *args, **kwargs)
+
+    def patch(self, url: Any, *args: Any, **kwargs: Any):
+        return self.request("PATCH", url, *args, **kwargs)
+
+    def delete(self, url: Any, *args: Any, **kwargs: Any):
+        return self.request("DELETE", url, *args, **kwargs)
+
+    def close(self) -> None:
+        with self._lock:
+            client = self._client
+        _close_quietly(client)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self.close()
+
+    def __getattr__(self, name: str):
+        with self._lock:
+            client = self._client
+        return getattr(client, name)
+
+
 def _close_quietly(client: Any) -> None:
     close = getattr(client, "close", None)
     if callable(close):
@@ -92,12 +173,12 @@ def install_transport_resilience(resident) -> bool:
         return False
 
     old_http = resident._HTTP
-    resident._HTTP = _resident_http_client(resident)
+    resident._HTTP = _RecyclingHttpClient(resident)
     _close_quietly(old_http)
 
     if str(getattr(resident, "FEEDLING_ENCLAVE_URL", "") or "").strip():
         old_enclave = getattr(resident, "_ENCLAVE_CLIENT", None)
-        resident._ENCLAVE_CLIENT = _resident_http_client(
+        resident._ENCLAVE_CLIENT = _RecyclingHttpClient(
             resident, verify=False
         )
         _close_quietly(old_enclave)
@@ -105,7 +186,7 @@ def install_transport_resilience(resident) -> bool:
     resident._io_transport_resilience_installed = True
     if logger is not None:
         logger.info(
-            "[transport] resilient pools installed timeout=%ss keepalive=%ss",
+            "[transport] recycling pools installed timeout=%ss keepalive=%ss",
             HTTP_TIMEOUT_SEC,
             HTTP_KEEPALIVE_EXPIRY_SEC,
         )
