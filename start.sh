@@ -497,6 +497,12 @@ export SEND_FALLBACK_ON_AGENT_ERROR=true
 export POLL_TIMEOUT=15
 export FEEDLING_HTTP_TIMEOUT_SEC=35
 export FEEDLING_HTTP_KEEPALIVE_EXPIRY_SEC=15
+# Keep the resident alive across a prolonged Feedling edge outage. Upstream's
+# default is eight startup attempts, after which the process exits and Zeabur
+# enters a noisy crash loop. This preserves upstream's retry implementation
+# while giving the service roughly two days to reconnect by itself.
+export WHOAMI_STARTUP_RETRIES="${WHOAMI_STARTUP_RETRIES:-8640}"
+export WHOAMI_STARTUP_RETRY_DELAY_SEC="${WHOAMI_STARTUP_RETRY_DELAY_SEC:-5}"
 echo "IO 对话上限已设为 360 秒；轮询与连接池韧性配置已启用。"
 
 ONBOARD_MARKER=/data/feedling/onboarding_done
@@ -546,3 +552,4 @@ if [ ! -f "$VERIFY_MARKER" ]; then
 fi
 
 wait "$CONSUMER_PID"
+

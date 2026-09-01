@@ -30,6 +30,17 @@ class GardenActionGuardTests(unittest.TestCase):
             self.assertIn(forbidden, self.start_script)
         self.assertIn("If no required action is pending, perform no write", self.start_script)
 
+    def test_startup_whoami_retries_survive_edge_outages(self):
+        self.assertIn(
+            'WHOAMI_STARTUP_RETRIES="${WHOAMI_STARTUP_RETRIES:-8640}"',
+            self.start_script,
+        )
+        self.assertIn(
+            'WHOAMI_STARTUP_RETRY_DELAY_SEC="${WHOAMI_STARTUP_RETRY_DELAY_SEC:-5}"',
+            self.start_script,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
+
