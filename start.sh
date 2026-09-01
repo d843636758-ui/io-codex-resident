@@ -400,6 +400,58 @@ diagnosis is better than reaching the hard turn timeout with no answer.
 EOF
 fi
 
+# Add a narrowly scoped OB argument/retry contract without changing auth,
+# network, Garden, or resident lifecycle behavior.
+OB_WRITE_RELIABILITY_V4_MARKER="feedling-io-ob-write-reliability-v4"
+if ! grep -q "$OB_WRITE_RELIABILITY_V4_MARKER" "$RESIDENT_GUIDE" 2>/dev/null; then
+  cat >> "$RESIDENT_GUIDE" <<'EOF'
+
+<!-- feedling-io-ob-write-reliability-v4 -->
+## Ombre Brain write reliability (v4; overrides conflicting examples above)
+
+For every ordinary OB fact write, call the leaf tool named `hold` with only
+arguments present in its freshly loaded schema. The intended shape is:
+
+`hold(content="...", importance=<numeric value>, feel=false)`
+
+`importance` must be a JSON number accepted by the current schema, never a
+boolean or the strings `"true"` / `"false"`. `feel` must be the JSON boolean
+`false` for an ordinary interaction fact. Never send an argument named `pulse`
+to `hold`, never translate `feel=false` into `pulse=false`, and never use the
+read tool `pulse` as a write or as proof that a write succeeded.
+
+Classify a failed write before deciding whether to retry:
+
+1. A local schema/argument rejection such as `invalid float value: 'false'`
+   proves the write did not execute. Reload the exact `hold` schema, remove the
+   invalid or unknown argument, preserve the same content, and retry the
+   corrected `hold` call once.
+2. A definite network connection failure, disconnect, or read timeout must
+   retry the same tool in place, up to three total attempts. Do not repeat any
+   attempt that already returned a success receipt.
+3. A generic `cancelled`, `interrupted`, or missing-result state is uncertain,
+   not a network error and not an OB rejection. Do not blindly issue another
+   write. First use an OB read/search tool to look for the exact distinctive
+   content and current interaction time. If a matching new bucket with a real
+   ID is found, do not write it again. If no match can be established, stop the
+   persistence chain and report that the result is uncertain; never risk
+   silently duplicating the memory.
+4. Authentication, permission, and semantic validation errors are durable for
+   that attempt. Stop the chain and report the exact concise error instead of
+   retrying with guessed fields.
+
+A successful OB step requires the actual write response to report success and
+return its real `bucket_id` or `memory_id`. Record that receipt internally
+before advancing to emotion and Eventide. A later read can resolve an uncertain
+outcome, but it must never be described as the original write receipt.
+
+Persistence is secondary to the user's conversation. Parameter correction and
+safe retries happen silently when they recover. If recovery fails, still answer
+the user's actual message fully and append only one short factual failure note;
+never replace the answer with debugging narration.
+EOF
+fi
+
 
 CONFIG_FILE="$CODEX_HOME/config.toml"
 
