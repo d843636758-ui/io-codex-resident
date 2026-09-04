@@ -13,6 +13,7 @@ import functools
 import inspect
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -27,6 +28,24 @@ GARDEN_TRIGGER_RE = re.compile(
     r"(?m)^- trigger: [^\n]*\bgarden_wake_[a-z0-9_.:-]+"
 )
 PRESENCE_WAKE_RE = re.compile(r"(?m)^\[Feedling proactive wake\]\s*$")
+
+
+def _foreground_timeout_recovery_prompt(message: Any) -> str:
+    """Build a side-effect-free retry after a poisoned resumed Codex turn.
+
+    The first process may have completed remote MCP writes before hanging, so
+    the retry must only recover the visible answer and must never repeat tools.
+    """
+    return (
+        "The previous attempt to answer this genuine IO Chat user message hit "
+        "the resident subprocess timeout. Recover the user-visible reply now. "
+        "Do not call any tool, do not run standing persistence workflows, and "
+        "do not repeat any possible side effect from the timed-out attempt. "
+        "Answer the user's actual message directly and naturally. Do not mention "
+        "this recovery instruction unless the user explicitly asked about the "
+        "failure.\n\nOriginal user message:\n"
+        + str(message or "")
+    )
 
 
 def _bounded_float_env(name: str, default: float, minimum: float) -> float:
@@ -270,6 +289,7 @@ def install_patches(resident, materializer) -> bool:
         return False
 
     original_mcp_value = resident._user_mcp_cli_value
+    recovery_state = {"active": False}
     lane_names = {
         GARDEN_LANE: _allowed_mcp_names(),
         PRESENCE_LANE: _presence_mcp_names(),
@@ -277,6 +297,16 @@ def install_patches(resident, materializer) -> bool:
 
     @functools.wraps(original_mcp_value)
     def selective_mcp_value(template: str, lane: str) -> str:
+        if recovery_state["active"]:
+            if "{mcp}" not in template:
+                return ""
+            return " ".join(
+                f"-c mcp_servers.{str(server.get('name') or '').strip()}.enabled=false"
+                for server in resident._user_mcp_applied.get("servers") or []
+                if server.get("enabled")
+                and str(server.get("name") or "").strip()
+                and materializer.effective_transport(server) != "sse"
+            )
         if lane not in lane_names:
             return original_mcp_value(template, lane)
         if "{mcp}" not in template:
@@ -345,7 +375,41 @@ def install_patches(resident, materializer) -> bool:
                 "[presence_wake] using selective continuity MCP background lane"
             )
 
-        result = original_call_agent(*bound.args, **bound.kwargs)
+        try:
+            result = original_call_agent(*bound.args, **bound.kwargs)
+        except subprocess.TimeoutExpired:
+            routed_lane = str(bound.arguments.get("lane") or "background")
+            if routed_lane != "chat":
+                raise
+
+            resident.log.warning(
+                "[foreground_recovery] Codex turn timed out; retrying once in "
+                "a fresh side-effect-free session"
+            )
+            retry_kwargs: dict[str, Any] = {"lane": "chat"}
+            if "isolated_session" in call_signature.parameters:
+                retry_kwargs["isolated_session"] = True
+
+            old_timeout = getattr(resident, "AGENT_TURN_TIMEOUT_SEC", None)
+            recovery_timeout = max(
+                30,
+                int(os.environ.get("FEEDLING_AGENT_RECOVERY_TIMEOUT_SEC", "120")),
+            )
+            recovery_state["active"] = True
+            if old_timeout is not None:
+                resident.AGENT_TURN_TIMEOUT_SEC = min(
+                    int(old_timeout), recovery_timeout
+                )
+            try:
+                return original_call_agent(
+                    _foreground_timeout_recovery_prompt(message),
+                    **retry_kwargs,
+                )
+            finally:
+                if old_timeout is not None:
+                    resident.AGENT_TURN_TIMEOUT_SEC = old_timeout
+                recovery_state["active"] = False
+
         routed_lane = str(bound.arguments.get("lane") or "background")
         failure_class = str(
             getattr(resident, "_turn_reply_parse_failed", "") or ""

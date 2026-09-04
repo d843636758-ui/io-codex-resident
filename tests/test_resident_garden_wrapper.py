@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -102,6 +103,55 @@ class GardenWrapperTests(unittest.TestCase):
         value = FakeResident._user_mcp_cli_value("codex {mcp}", "chat")
         self.assertEqual(value, "original:chat")
 
+    def test_foreground_timeout_retries_once_isolated_without_user_mcps(self):
+        class TimeoutResident:
+            log = logging.getLogger("foreground-recovery-test")
+            _garden_wake_wrapper_installed = False
+            _turn_reply_parse_failed = ""
+            AGENT_TURN_TIMEOUT_SEC = 360
+            _user_mcp_applied = FakeResident._user_mcp_applied
+            calls = []
+
+            @staticmethod
+            def _cli_template_is_codex():
+                return True
+
+            @staticmethod
+            def _user_mcp_cli_value(template, lane):
+                return f"original:{lane}"
+
+            @classmethod
+            def call_agent(
+                cls, message, lane="background", isolated_session=False
+            ):
+                cls.calls.append(
+                    {
+                        "message": message,
+                        "lane": lane,
+                        "isolated_session": isolated_session,
+                        "mcp": cls._user_mcp_cli_value("codex {mcp}", lane),
+                        "timeout": cls.AGENT_TURN_TIMEOUT_SEC,
+                    }
+                )
+                if len(cls.calls) == 1:
+                    raise subprocess.TimeoutExpired(["codex"], 360)
+                return {"messages": ["recovered"]}
+
+        WRAPPER.install_patches(TimeoutResident, Materializer)
+        result = TimeoutResident.call_agent("hello", lane="chat")
+
+        self.assertEqual(result, {"messages": ["recovered"]})
+        self.assertEqual(len(TimeoutResident.calls), 2)
+        retry = TimeoutResident.calls[1]
+        self.assertTrue(retry["isolated_session"])
+        self.assertEqual(retry["lane"], "chat")
+        self.assertEqual(retry["timeout"], 120)
+        self.assertIn("mcp_servers.garden.enabled=false", retry["mcp"])
+        self.assertIn("mcp_servers.ob.enabled=false", retry["mcp"])
+        self.assertNotIn("legacy", retry["mcp"])
+        self.assertIn("Original user message:\nhello", retry["message"])
+        self.assertEqual(TimeoutResident.AGENT_TURN_TIMEOUT_SEC, 360)
+
     def test_upstream_contract_change_keeps_io_chat_running(self):
         class FutureResident:
             log = logging.getLogger("garden-wrapper-contract-test")
@@ -141,8 +191,8 @@ class TransportResilienceTests(unittest.TestCase):
         installed = WRAPPER.install_transport_resilience(resident)
 
         self.assertTrue(installed)
-        self.assertIs(resident._HTTP, new_http)
-        self.assertIs(resident._ENCLAVE_CLIENT, new_enclave)
+        self.assertIs(resident._HTTP._client, new_http)
+        self.assertIs(resident._ENCLAVE_CLIENT._client, new_enclave)
         old_http.close.assert_called_once_with()
         old_enclave.close.assert_called_once_with()
         self.assertEqual(httpx_module.Client.call_count, 2)
