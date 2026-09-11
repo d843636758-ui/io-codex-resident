@@ -15,12 +15,45 @@ INLINE_TABLE = re.compile(r"^(\s*[^=]+?=\s*)\{(.*)}(\s*(?:#.*)?)$")
 SAFE_BASELINE = """cli_auth_credentials_store = "file"
 mcp_oauth_credentials_store = "file"
 approval_policy = "never"
-sandbox_mode = "workspace-write"
+sandbox_mode = "danger-full-access"
 
 [sandbox_workspace_write]
 network_access = true
 writable_roots = ["/data"]
 """
+
+
+def enforce_container_runtime(text: str) -> tuple[str, bool]:
+    """Disable Codex's nested bwrap sandbox inside the Zeabur container.
+
+    Zeabur already supplies the process isolation boundary.  Its runtime does
+    not grant the namespace operations Bubblewrap needs, so workspace-write
+    fails before even harmless local commands can start.
+    """
+    lines = text.splitlines(keepends=True)
+    section = ""
+    changed = False
+    found = False
+    for index, line in enumerate(lines):
+        table = TABLE_HEADER.match(line)
+        if table:
+            section = table.group(1).strip()
+            continue
+        assignment = ASSIGNMENT.match(line)
+        if section or not assignment or assignment.group(1).strip() != "sandbox_mode":
+            continue
+        found = True
+        ending = "\n" if line.endswith("\n") else ""
+        wanted = f'sandbox_mode = "danger-full-access"{ending}'
+        if line != wanted:
+            lines[index] = wanted
+            changed = True
+    if not found:
+        lines.insert(0, 'sandbox_mode = "danger-full-access"\n')
+        changed = True
+    result = "".join(lines)
+    tomllib.loads(result)
+    return result, changed
 
 
 def _split_inline_items(value: str) -> list[str]:
@@ -207,6 +240,8 @@ def main() -> None:
     if args.drop_table:
         repaired, dropped = drop_table(repaired, args.drop_table)
         changed = changed or dropped
+    repaired, runtime_changed = enforce_container_runtime(repaired)
+    changed = changed or runtime_changed
     if changed:
         path.write_text(repaired)
         path.chmod(0o600)
